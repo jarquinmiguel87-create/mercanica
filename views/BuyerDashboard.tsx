@@ -1,8 +1,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { StoreProfile, Product, NICARAGUA_CITIES } from '../types';
-import { Store, MapPin, Search, ArrowRight, ArrowLeft, ShoppingBag, PackageOpen, User, Home } from 'lucide-react';
-import { getAllStores, getProducts } from '../services/storageService';
+import { Store, MapPin, Search, ArrowRight, ArrowLeft, ShoppingBag, PackageOpen, User, Star, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { getAllStores, getProducts, getStoreReputation } from '../services/storageService';
 import { ProductCard } from '../components/ProductCard';
 
 interface BuyerDashboardProps {
@@ -18,6 +18,15 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ onSelectStore, o
 
   const allStores = useMemo(() => getAllStores(), []);
   const allProducts = useMemo(() => getProducts(), []); // Get all products from all stores
+
+  // Calculate reputation for all stores once
+  const storeReputations = useMemo(() => {
+    const reputations: Record<string, any> = {};
+    allStores.forEach(store => {
+      reputations[store.id] = getStoreReputation(store.id);
+    });
+    return reputations;
+  }, [allStores]);
 
   // Filter Stores
   const filteredStores = useMemo(() => {
@@ -46,6 +55,31 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ onSelectStore, o
       return isInCity && matchesSearch;
     });
   }, [allProducts, allStores, selectedCity, searchTerm]);
+
+  const renderStoreStars = (storeId: string) => {
+    const rep = storeReputations[storeId];
+    if (!rep) return null;
+    
+    if (rep.status === 'SCAM_ALERT') {
+      return (
+        <div className="flex items-center gap-1 text-red-500 font-bold text-xs bg-red-50 px-2 py-1 rounded-full">
+           <ShieldAlert className="w-3 h-3" /> ALERTA
+        </div>
+      );
+    }
+
+    if (rep.count === 0) {
+       return <span className="text-xs text-gray-400">Nuevo</span>;
+    }
+
+    return (
+      <div className="flex items-center gap-1">
+        <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
+        <span className="text-xs font-bold text-gray-700">{rep.rating.toFixed(1)}</span>
+        <span className="text-[10px] text-gray-400">({rep.count})</span>
+      </div>
+    );
+  };
 
   if (!selectedCity) {
     return (
@@ -143,7 +177,7 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ onSelectStore, o
                     <div 
                       key={store.id} 
                       onClick={() => onSelectStore(store)}
-                      className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all cursor-pointer border border-gray-100 group"
+                      className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all cursor-pointer border border-gray-100 group relative"
                     >
                       <div className="h-24 bg-gradient-to-r from-pink-500 to-rose-400 relative">
                          <div className="absolute -bottom-8 left-6 w-16 h-16 bg-white rounded-xl shadow-md flex items-center justify-center overflow-hidden">
@@ -155,16 +189,19 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ onSelectStore, o
                          </div>
                       </div>
                       <div className="pt-12 pb-6 px-6">
-                         <div className="flex justify-between items-start">
+                         <div className="flex justify-between items-start mb-1">
                            <div>
                              <h3 className="text-lg font-bold text-gray-900 group-hover:text-pink-600 transition-colors">{store.name}</h3>
                              {store.isPersonal && (
                                <span className="text-[10px] uppercase font-bold bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Particular</span>
                              )}
                            </div>
-                           <span className="bg-pink-50 text-pink-600 px-2 py-1 rounded-md text-xs font-medium">
-                              {store.city}
-                           </span>
+                           <div className="flex flex-col items-end gap-1">
+                              <span className="bg-pink-50 text-pink-600 px-2 py-1 rounded-md text-xs font-medium">
+                                  {store.city}
+                              </span>
+                              {renderStoreStars(store.id)}
+                           </div>
                          </div>
                          <p className="text-gray-500 text-sm mt-2 line-clamp-2">{store.description}</p>
                       </div>
@@ -186,14 +223,21 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ onSelectStore, o
             <>
                {filteredProducts.length > 0 ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                    {filteredProducts.map(product => (
-                      <ProductCard 
-                        key={product.id}
-                        product={product}
-                        onDelete={() => {}}
-                        onSelect={onSelectProduct}
-                      />
-                    ))}
+                    {filteredProducts.map(product => {
+                      const store = allStores.find(s => s.id === product.storeId);
+                      const reputation = store ? storeReputations[store.id] : undefined;
+                      
+                      return (
+                        <ProductCard 
+                          key={product.id}
+                          product={product}
+                          onDelete={() => {}}
+                          onSelect={onSelectProduct}
+                          storeName={store?.name}
+                          storeReputation={reputation}
+                        />
+                      );
+                    })}
                   </div>
                ) : (
                   <div className="text-center py-20">

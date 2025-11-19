@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Product, Review, ChatMessage, StoreProfile } from '../types';
-import { ArrowLeft, Star, Send, User, ShoppingCart, MessageCircle, MessageSquare } from 'lucide-react';
-import { getReviews, addReview } from '../services/storageService';
+import { ArrowLeft, Star, Send, User, ShoppingCart, MessageCircle, MessageSquare, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { getReviews, addReview, getStoreReputation, ReputationResult } from '../services/storageService';
 import { answerProductQuestion } from '../services/geminiService';
 
 interface ProductDetailProps {
@@ -13,6 +13,8 @@ interface ProductDetailProps {
 
 export const ProductDetail: React.FC<ProductDetailProps> = ({ product, store, onBack }) => {
   const [activeTab, setActiveTab] = useState<'chat' | 'reviews'>('chat');
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const [reputation, setReputation] = useState<ReputationResult>({ rating: 0, count: 0, status: 'NEUTRAL' });
   
   // Reviews State
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -29,7 +31,8 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({ product, store, on
 
   useEffect(() => {
     setReviews(getReviews(product.id));
-  }, [product.id]);
+    setReputation(getStoreReputation(store.id));
+  }, [product.id, store.id]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -47,6 +50,9 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({ product, store, on
     };
     addReview(review);
     setReviews(prev => [review, ...prev]); // Optimistic update
+    
+    // Update reputation locally for immediate feedback if needed, though normally calculated on load
+    
     setNewReview({ author: '', rating: 5, comment: '' });
     setShowReviewForm(false);
   };
@@ -77,6 +83,7 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({ product, store, on
   };
 
   const currencySymbol = product.currency === 'NIO' ? 'C$' : '$';
+  const images = product.images && product.images.length > 0 ? product.images : [];
 
   return (
     <div className="max-w-6xl mx-auto p-6 h-[calc(100vh-2rem)] flex flex-col">
@@ -88,11 +95,17 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({ product, store, on
       </div>
 
       <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden flex-1 flex flex-col lg:flex-row">
-        {/* Left Column: Product Info */}
+        {/* Left Column: Product Info & Gallery */}
         <div className="lg:w-1/2 p-8 border-b lg:border-b-0 lg:border-r border-gray-100 overflow-y-auto no-scrollbar">
-          <div className="aspect-square rounded-xl overflow-hidden bg-gray-50 mb-6 relative shadow-inner">
-            {product.imageUrl ? (
-              <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
+          
+          {/* Main Image */}
+          <div className="aspect-square rounded-xl overflow-hidden bg-gray-50 mb-4 relative shadow-inner group">
+            {images.length > 0 ? (
+              <img 
+                src={images[selectedImageIndex]} 
+                alt={product.name} 
+                className="w-full h-full object-cover" 
+              />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-gray-300">
                 <ShoppingCart className="w-24 h-24" />
@@ -102,13 +115,46 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({ product, store, on
                 {product.size}
              </div>
           </div>
+
+          {/* Gallery Thumbnails */}
+          {images.length > 1 && (
+             <div className="flex gap-2 mb-6 overflow-x-auto pb-2 no-scrollbar">
+                {images.map((img, idx) => (
+                   <button 
+                      key={idx}
+                      onClick={() => setSelectedImageIndex(idx)}
+                      className={`w-20 h-20 rounded-lg overflow-hidden border-2 flex-shrink-0 transition-all ${selectedImageIndex === idx ? 'border-indigo-500 ring-2 ring-indigo-100' : 'border-gray-100 opacity-70 hover:opacity-100'}`}
+                   >
+                      <img src={img} alt={`Thumb ${idx}`} className="w-full h-full object-cover" />
+                   </button>
+                ))}
+             </div>
+          )}
           
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
             <span className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded-md text-xs font-semibold tracking-wide uppercase">
                 {product.brand}
             </span>
             <span className="text-gray-400 text-sm">•</span>
             <span className="text-gray-500 text-sm">{product.category}</span>
+            
+            {/* Seller Reputation Snippet */}
+            <span className="text-gray-400 text-sm">•</span>
+            <div className="flex items-center gap-1 bg-gray-50 px-2 py-1 rounded-md border border-gray-200">
+               {reputation.status === 'SCAM_ALERT' ? (
+                  <ShieldAlert className="w-3 h-3 text-red-500" />
+               ) : (
+                  <ShieldCheck className={`w-3 h-3 ${reputation.status === 'EXCELLENT' ? 'text-green-500' : 'text-gray-400'}`} />
+               )}
+               <span className={`text-xs font-bold ${reputation.status === 'SCAM_ALERT' ? 'text-red-600' : 'text-gray-600'}`}>
+                  {store.name}
+               </span>
+               {reputation.rating > 0 && (
+                 <span className="text-xs text-gray-500 flex items-center ml-1">
+                   {reputation.rating.toFixed(1)} <Star className="w-3 h-3 text-yellow-400 fill-yellow-400 ml-0.5" />
+                 </span>
+               )}
+            </div>
           </div>
 
           <h1 className="text-3xl font-bold text-gray-900 mb-4">{product.name}</h1>

@@ -61,12 +61,11 @@ const App: React.FC = () => {
   };
 
   const handleLogout = () => {
-    if (window.confirm("¿Cerrar sesión?")) {
-      logoutSeller();
-      setActiveStore(undefined);
-      setUserMode(null);
-      setView('welcome');
-    }
+    // Removed window.confirm to ensure the button works reliably in all environments
+    logoutSeller();
+    setActiveStore(undefined);
+    setUserMode(null);
+    setView('welcome');
   };
 
   // Buyer Navigation
@@ -147,7 +146,6 @@ const App: React.FC = () => {
                 if (userMode === 'seller') setView('dashboard');
                 else {
                    // If coming from global search or storefront
-                   // Logic: If we have a store selected but view isn't 'storefront' in history... 
                    // Ideally we just go back to dashboard for now to keep it simple or check history
                    setView('buyer-dashboard'); 
                 }

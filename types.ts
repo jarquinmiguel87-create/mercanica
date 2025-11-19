@@ -33,7 +33,7 @@ export interface Product {
   size: string;
   category: ProductCategory;
   description: string;
-  imageUrl?: string;
+  images: string[];
   createdAt: number;
 }
 

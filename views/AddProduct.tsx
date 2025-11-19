@@ -1,8 +1,8 @@
 
-import React, { useState } from 'react';
-import { Wand2, Image as ImageIcon, Loader2, Save, X } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { Wand2, Image as ImageIcon, Loader2, Save, X, Plus, Trash2, UploadCloud } from 'lucide-react';
 import { ProductCategory, Product, AIProductSuggestion } from '../types';
-import { fileToBase64, saveProduct } from '../services/storageService';
+import { compressImage, saveProduct } from '../services/storageService';
 import { generateProductDetails } from '../services/geminiService';
 
 interface AddProductProps {
@@ -14,7 +14,9 @@ interface AddProductProps {
 export const AddProduct: React.FC<AddProductProps> = ({ storeId, onProductAdded, onCancel }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isProcessingImages, setIsProcessingImages] = useState(false);
+  const [images, setImages] = useState<string[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -27,16 +29,57 @@ export const AddProduct: React.FC<AddProductProps> = ({ storeId, onProductAdded,
     additionalDetails: '' // Used for AI prompt
   });
 
-  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
+  const processFiles = async (files: FileList | File[]) => {
+    setIsProcessingImages(true);
+    const newImages: string[] = [];
+    
+    // Process concurrently
+    const promises = Array.from(files).map(async (file) => {
       try {
-        const base64 = await fileToBase64(file);
-        setImagePreview(base64);
+        // Compress image to save space and improve performance
+        const base64 = await compressImage(file);
+        return base64;
       } catch (error) {
-        console.error("Error reading file", error);
+        console.error("Error processing file", error);
+        return null;
       }
+    });
+
+    const results = await Promise.all(promises);
+    results.forEach(res => {
+      if (res) newImages.push(res);
+    });
+
+    setImages(prev => [...prev, ...newImages]);
+    setIsProcessingImages(false);
+  };
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      processFiles(e.target.files);
     }
+  };
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      processFiles(e.dataTransfer.files);
+    }
+  }, []);
+
+  const removeImage = (index: number) => {
+    setImages(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleGenerateAI = async () => {
@@ -56,7 +99,6 @@ export const AddProduct: React.FC<AddProductProps> = ({ storeId, onProductAdded,
       setFormData(prev => ({
         ...prev,
         description: suggestion.description,
-        // Simple mapping logic - could be more robust
         category: Object.values(ProductCategory).includes(suggestion.suggestedCategory as ProductCategory) 
           ? suggestion.suggestedCategory as ProductCategory 
           : ProductCategory.OTRO
@@ -80,7 +122,7 @@ export const AddProduct: React.FC<AddProductProps> = ({ storeId, onProductAdded,
       size: formData.size || 'Única',
       category: formData.category,
       description: formData.description,
-      imageUrl: imagePreview || undefined,
+      images: images,
       createdAt: Date.now(),
     };
 
@@ -105,28 +147,75 @@ export const AddProduct: React.FC<AddProductProps> = ({ storeId, onProductAdded,
         {/* Left Column: Image & Basic Info */}
         <div className="lg:col-span-1 space-y-6">
           <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Foto del Producto</label>
-            <div className="relative aspect-square bg-slate-50 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center hover:bg-slate-100 transition-colors cursor-pointer overflow-hidden group">
-              {imagePreview ? (
-                <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+            <div className="flex justify-between items-center mb-2">
+               <label className="block text-sm font-medium text-gray-700">Galería de Fotos</label>
+               {images.length > 0 && (
+                 <button onClick={() => setImages([])} className="text-xs text-red-500 hover:underline">Borrar todas</button>
+               )}
+            </div>
+            
+            {/* Drag and Drop Area */}
+            <div 
+              className={`relative border-2 border-dashed rounded-xl p-4 transition-all duration-200 flex flex-col items-center justify-center min-h-[160px] mb-4 ${
+                isDragging 
+                  ? 'border-primary bg-indigo-50 scale-[1.02]' 
+                  : 'border-gray-300 bg-gray-50 hover:bg-gray-100'
+              }`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
+              {isProcessingImages ? (
+                <div className="flex flex-col items-center text-primary">
+                  <Loader2 className="w-8 h-8 animate-spin mb-2" />
+                  <span className="text-xs font-medium">Optimizando imágenes...</span>
+                </div>
               ) : (
-                <div className="text-center p-4">
-                  <ImageIcon className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                  <span className="text-xs text-gray-500">Clic para subir imagen</span>
-                </div>
-              )}
-              <input 
-                type="file" 
-                accept="image/*"
-                onChange={handleImageChange}
-                className="absolute inset-0 opacity-0 cursor-pointer" 
-              />
-              {imagePreview && (
-                <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <span className="text-white text-sm font-medium">Cambiar Imagen</span>
-                </div>
+                <>
+                  <div className="w-10 h-10 bg-white rounded-full shadow-sm flex items-center justify-center mb-3">
+                     <UploadCloud className={`w-5 h-5 ${isDragging ? 'text-primary' : 'text-gray-400'}`} />
+                  </div>
+                  <p className="text-sm text-gray-600 text-center font-medium mb-1">
+                    Arrastra fotos aquí
+                  </p>
+                  <p className="text-xs text-gray-400 text-center mb-3">
+                    o haz clic para buscar
+                  </p>
+                  <label className="cursor-pointer bg-white border border-gray-200 hover:border-primary hover:text-primary text-gray-600 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors shadow-sm">
+                    Seleccionar Archivos
+                    <input 
+                      type="file" 
+                      multiple // Enable bulk upload
+                      accept="image/*"
+                      onChange={handleImageChange}
+                      className="hidden" 
+                    />
+                  </label>
+                </>
               )}
             </div>
+
+            {/* Image Grid */}
+            {images.length > 0 && (
+              <div className="grid grid-cols-3 gap-2 animate-in fade-in slide-in-from-top-2">
+                 {images.map((img, idx) => (
+                   <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 group bg-white">
+                      <img src={img} alt={`Upload ${idx}`} className="w-full h-full object-cover" />
+                      <button 
+                        type="button"
+                        onClick={() => removeImage(idx)}
+                        className="absolute top-1 right-1 bg-black/50 hover:bg-red-500 text-white p-1 rounded-full transition-colors opacity-0 group-hover:opacity-100"
+                      >
+                         <Trash2 className="w-3 h-3" />
+                      </button>
+                      {idx === 0 && <span className="absolute bottom-0 left-0 w-full bg-black/50 text-white text-[9px] py-0.5 text-center backdrop-blur-sm">Portada</span>}
+                   </div>
+                 ))}
+              </div>
+            )}
+            <p className="text-[10px] text-gray-400 mt-2 text-center">
+              Sube tantas fotos como necesites. Se optimizarán automáticamente.
+            </p>
           </div>
         </div>
 
@@ -257,7 +346,7 @@ export const AddProduct: React.FC<AddProductProps> = ({ storeId, onProductAdded,
               </button>
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || isProcessingImages}
                 className="px-6 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-medium transition-colors flex items-center gap-2 disabled:opacity-70"
               >
                 {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}

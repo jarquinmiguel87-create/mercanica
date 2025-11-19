@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Store, ArrowRight, Sparkles, MapPin, UserCircle, Image as ImageIcon, Upload } from 'lucide-react';
 import { StoreProfile, NICARAGUA_CITIES } from '../types';
-import { saveStore, fileToBase64 } from '../services/storageService';
+import { saveStore, compressImage } from '../services/storageService';
 
 interface StoreSetupProps {
   mode: 'business' | 'personal';
@@ -24,7 +24,8 @@ export const StoreSetup: React.FC<StoreSetupProps> = ({ mode, onComplete, onCanc
   const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       try {
-        const base64 = await fileToBase64(e.target.files[0]);
+        // Compress logo to 300px max to save space
+        const base64 = await compressImage(e.target.files[0], 300, 0.8);
         setLogoPreview(base64);
       } catch (error) {
         console.error("Error reading file", error);
